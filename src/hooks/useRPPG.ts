@@ -84,8 +84,13 @@ interface RoiStats {
   brightness: number;
   over: number;
   under: number;
+  valid: number;
 }
 
+/**
+ * Mean colour of the skin-like pixels inside an ROI. Very dark, clipped or
+ * non-skin-ratio pixels (hair, background, shadow) are excluded.
+ */
 function sampleRoi(
   data: Uint8ClampedArray,
   imgW: number,
@@ -100,12 +105,14 @@ function sampleRoi(
   const y0 = Math.max(0, Math.round(cy - h / 2));
   const y1 = Math.min(imgH, Math.round(cy + h / 2));
   if (x1 - x0 < 3 || y1 - y0 < 3) return null;
+  const S = RPPG_CONFIG.skin;
   let r = 0;
   let g = 0;
   let b = 0;
   let over = 0;
   let under = 0;
   let n = 0;
+  let valid = 0;
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       const i = (y * imgW + x) * 4;
@@ -113,18 +120,24 @@ function sampleRoi(
       const pg = data[i + 1];
       const pb = data[i + 2];
       const lum = 0.299 * pr + 0.587 * pg + 0.114 * pb;
-      if (lum > 245) over++;
-      if (lum < 25) under++;
+      n++;
+      if (lum > 240) over++;
+      if (lum < 30) under++;
+      if (lum < S.minLuma || lum > S.maxLuma) continue;
+      const rg = pg > 0 ? pr / pg : 0;
+      const rb = pb > 0 ? pr / pb : 0;
+      if (rb < S.minRedOverBlue) continue;
+      if (rg < S.minRedOverGreen || rg > S.maxRedOverGreen) continue;
       r += pr;
       g += pg;
       b += pb;
-      n++;
+      valid++;
     }
   }
-  if (n === 0) return null;
-  const rm = r / n;
-  const gm = g / n;
-  const bm = b / n;
+  if (n === 0 || valid < 12) return null;
+  const rm = r / valid;
+  const gm = g / valid;
+  const bm = b / valid;
   return {
     r: rm,
     g: gm,
@@ -132,6 +145,7 @@ function sampleRoi(
     brightness: 0.299 * rm + 0.587 * gm + 0.114 * bm,
     over: over / n,
     under: under / n,
+    valid: valid / n,
   };
 }
 
