@@ -12,7 +12,7 @@ function Metric({ label, value, hint }: { label: string; value: string; hint?: s
 
 export function MetricsPanel({ features }: { features: LivenessFeatures | null }) {
   if (!features) return null;
-  const reliable = features.signalQuality >= 45 && features.bpm != null;
+  const reliable = features.signalQuality >= 28 && features.bpm != null;
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
       <Metric

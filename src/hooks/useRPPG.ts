@@ -12,6 +12,7 @@ import { analyzeFrames, estimateFps, regionWaveform } from "@/lib/rppg/analyze";
 import { defaultClassifier } from "@/lib/rppg/scoring";
 import { computeLighting } from "@/lib/rppg/quality";
 import { computeMotion } from "@/lib/rppg/motion";
+import { RPPG_CONFIG } from "@/lib/rppg/config";
 import { dominantFrequency, welchPsd, clamp } from "@/lib/rppg/signalProcessing";
 import { computeSignalQuality } from "@/lib/rppg/quality";
 
@@ -47,8 +48,8 @@ export interface LiveStatus {
   liveQuality: number | null;
 }
 
-const MIN_SECONDS = 12;
-const MAX_SECONDS = 20;
+const MIN_SECONDS: number = RPPG_CONFIG.acquisition.minSec;
+const MAX_SECONDS: number = RPPG_CONFIG.acquisition.maxSec;
 const SAMPLE_WIDTH = 256;
 
 const initialStatus: LiveStatus = {
@@ -84,8 +85,13 @@ interface RoiStats {
   brightness: number;
   over: number;
   under: number;
+  valid: number;
 }
 
+/**
+ * Mean colour of the skin-like pixels inside an ROI. Very dark, clipped or
+ * non-skin-ratio pixels (hair, background, shadow) are excluded.
+ */
 function sampleRoi(
   data: Uint8ClampedArray,
   imgW: number,
@@ -100,12 +106,14 @@ function sampleRoi(
   const y0 = Math.max(0, Math.round(cy - h / 2));
   const y1 = Math.min(imgH, Math.round(cy + h / 2));
   if (x1 - x0 < 3 || y1 - y0 < 3) return null;
+  const S = RPPG_CONFIG.skin;
   let r = 0;
   let g = 0;
   let b = 0;
   let over = 0;
   let under = 0;
   let n = 0;
+  let valid = 0;
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       const i = (y * imgW + x) * 4;
@@ -113,18 +121,24 @@ function sampleRoi(
       const pg = data[i + 1];
       const pb = data[i + 2];
       const lum = 0.299 * pr + 0.587 * pg + 0.114 * pb;
-      if (lum > 245) over++;
-      if (lum < 25) under++;
+      n++;
+      if (lum > 240) over++;
+      if (lum < 30) under++;
+      if (lum < S.minLuma || lum > S.maxLuma) continue;
+      const rg = pg > 0 ? pr / pg : 0;
+      const rb = pb > 0 ? pr / pb : 0;
+      if (rb < S.minRedOverBlue) continue;
+      if (rg < S.minRedOverGreen || rg > S.maxRedOverGreen) continue;
       r += pr;
       g += pg;
       b += pb;
-      n++;
+      valid++;
     }
   }
-  if (n === 0) return null;
-  const rm = r / n;
-  const gm = g / n;
-  const bm = b / n;
+  if (n === 0 || valid < 12) return null;
+  const rm = r / valid;
+  const gm = g / valid;
+  const bm = b / valid;
   return {
     r: rm,
     g: gm,
@@ -132,6 +146,7 @@ function sampleRoi(
     brightness: 0.299 * rm + 0.587 * gm + 0.114 * bm,
     over: over / n,
     under: under / n,
+    valid: valid / n,
   };
 }
 
@@ -159,6 +174,7 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
   const lastVideoTs = useRef(-1);
   const lastPreview = useRef(0);
   const targetRef = useRef(MIN_SECONDS);
+  const faceLostAt = useRef<number | null>(null);
 
   const setStep = useCallback((id: StepId, s: StepStatus) => {
     setSteps((prev) => (prev[id] === s ? prev : { ...prev, [id]: s }));
@@ -226,7 +242,11 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
     const faces = result.faceLandmarks ?? [];
 
     if (faces.length !== 1) {
-      framesRef.current = [];
+      if (faceLostAt.current == null) faceLostAt.current = now;
+      const lostSec = (now - faceLostAt.current) / 1000;
+      if (faces.length > 1 || lostSec > RPPG_CONFIG.acquisition.faceLossResetSec) {
+        framesRef.current = [];
+      }
       setStep("face", "PROCESSING");
       setStep("roi", "WAITING");
       setStatus((s) => ({
@@ -243,6 +263,7 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
       }));
       return;
     }
+    faceLostAt.current = null;
     setStep("face", "COMPLETE");
 
     const lm = faces[0];
@@ -259,13 +280,12 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
     const faceW = maxX - minX;
     const faceH = maxY - minY;
 
-    if (faceW < 0.16) {
+    if (faceW < RPPG_CONFIG.acquisition.minFaceWidth) {
       framesRef.current = [];
       setStatus((s) => ({ ...s, faceCount: 1, elapsedSec: 0, message: "Move closer to the camera." }));
       return;
     }
-    if (faceW > 0.85) {
-      framesRef.current = [];
+    if (faceW > RPPG_CONFIG.acquisition.maxFaceWidth) {
       setStatus((s) => ({ ...s, faceCount: 1, elapsedSec: 0, message: "Move slightly further away." }));
       return;
     }
@@ -300,6 +320,7 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
     let brightness = 0;
     let over = 0;
     let under = 0;
+    let validSum = 0;
     let count = 0;
     (Object.keys(ANCHORS) as RegionName[]).forEach((name) => {
       const anchor = lm[ANCHORS[name]];
@@ -315,10 +336,11 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
         faceH * rh * sh,
       );
       if (!stats) return;
-      regions[name] = { t: now, r: stats.r, g: stats.g, b: stats.b };
+      regions[name] = { t: now, r: stats.r, g: stats.g, b: stats.b, valid: stats.valid };
       brightness += stats.brightness;
       over += stats.over;
       under += stats.under;
+      validSum += stats.valid;
       count++;
     });
     if (count === 0) return;
@@ -333,6 +355,7 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
       brightness: brightness / count,
       overexposed: over / count,
       underexposed: under / count,
+      validRatio: validSum / count,
     };
     framesRef.current.push(frame);
     const buf = framesRef.current;
@@ -340,19 +363,10 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
 
     setStep("signal", "PROCESSING");
 
-    const recent = buf.slice(-20);
-    const motion = computeMotion(recent);
-    if (motion.excessive && buf.length > 10) {
-      framesRef.current = buf.slice(-5);
-      setStatus((s) => ({
-        ...s,
-        faceCount: 1,
-        stability: motion.stability,
-        elapsedSec: 0,
-        message: "Please keep your face steady.",
-      }));
-      return;
-    }
+    // Motion is scored continuously; heavy movement lowers quality but never
+    // discards the recording (natural movement must not reset acquisition).
+    const motion = computeMotion(buf.slice(-45));
+
 
     const elapsed = (frame.t - buf[0].t) / 1000;
     const fps = estimateFps(buf);
@@ -382,7 +396,7 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
         const q = peak ? computeSignalQuality(peak.snrDb, peak.peakStrength, 0.5) : 0;
         preview = {
           waveform: Array.from(fused.subarray(Math.max(0, len - Math.round(fps * 6)))),
-          liveBpm: peak && q >= 45 ? peak.bpm : null,
+          liveBpm: peak && q >= 30 ? peak.bpm : null,
           liveQuality: Math.round(q),
         };
         // Adaptive duration: extend acquisition when the signal is weak.
