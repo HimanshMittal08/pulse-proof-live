@@ -92,11 +92,9 @@ function PulseProof() {
     let cancelled = false;
     (async () => {
       const video = videoRef.current;
-      console.log('[pp] effect run', runToken, !!video);
       if (!video) return;
       rppg.reset();
       const ok = await camera.start(video);
-      console.log('[pp] camera start', ok);
       if (!cancelled && ok) await rppg.start();
     })();
     return () => {
