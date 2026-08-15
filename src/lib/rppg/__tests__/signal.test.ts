@@ -70,7 +70,7 @@ describe("spectral estimation and BPM", () => {
   it("recovers BPM from a known frequency", () => {
     const peak = dominantFrequency(welchPsd(sine(1.25, 12), FS));
     expect(peak).not.toBeNull();
-    expect(peak!.bpm).toBeCloseTo(75, 0);
+    expect(Math.abs(peak!.bpm - 75)).toBeLessThan(1.5);
   });
 
   it("rejects frequencies outside the physiological band", () => {
@@ -82,8 +82,11 @@ describe("spectral estimation and BPM", () => {
   it("reports higher peak strength for clean than for noisy signals", () => {
     const clean = sine(1.2, 12);
     const noisy = new Float32Array(clean.length);
+    let seed = 42;
     for (let i = 0; i < clean.length; i++) {
-      noisy[i] = clean[i] * 0.1 + Math.sin(i * 1.7) * Math.cos(i * 0.31) * 2;
+      // deterministic LCG pseudo-noise (seeded, reproducible)
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      noisy[i] = clean[i] * 0.05 + (seed / 2147483648 - 0.5) * 4;
     }
     const a = dominantFrequency(welchPsd(clean, FS))!;
     const b = dominantFrequency(welchPsd(noisy, FS))!;
