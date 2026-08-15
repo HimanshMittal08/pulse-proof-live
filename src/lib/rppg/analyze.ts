@@ -52,14 +52,8 @@ export function regionWaveform(
   const gu = resampleUniform(t, g, fps);
   const bu = resampleUniform(t, b, fps);
   const win = Math.max(3, Math.round(fps * 1.5));
-  const posSig = pos(
-    detrend(ru, win * 4),
-    detrend(gu, win * 4),
-    detrend(bu, win * 4),
-  );
-  // POS needs the raw (positive) channels for the normalisation step:
-  const posRaw = pos(ru, gu, bu, fps);
-  const primary = posRaw.length ? posRaw : posSig;
+  // POS operates on the raw (positive) channels: it normalises internally.
+  const primary = pos(ru, gu, bu, fps);
   const filtered = bandpass(detrend(primary, win * 4), fps, HR_MIN_HZ, HR_MAX_HZ);
   if (!isFinite(filtered[0] ?? NaN)) return chrom(ru, gu, bu, fps);
   return zscore(filtered);
