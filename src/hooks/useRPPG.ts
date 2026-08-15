@@ -174,6 +174,7 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
   const lastVideoTs = useRef(-1);
   const lastPreview = useRef(0);
   const targetRef = useRef(MIN_SECONDS);
+  const faceLostAt = useRef<number | null>(null);
 
   const setStep = useCallback((id: StepId, s: StepStatus) => {
     setSteps((prev) => (prev[id] === s ? prev : { ...prev, [id]: s }));
@@ -241,7 +242,11 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
     const faces = result.faceLandmarks ?? [];
 
     if (faces.length !== 1) {
-      framesRef.current = [];
+      if (faceLostAt.current == null) faceLostAt.current = now;
+      const lostSec = (now - faceLostAt.current) / 1000;
+      if (faces.length > 1 || lostSec > RPPG_CONFIG.acquisition.faceLossResetSec) {
+        framesRef.current = [];
+      }
       setStep("face", "PROCESSING");
       setStep("roi", "WAITING");
       setStatus((s) => ({
@@ -258,6 +263,7 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
       }));
       return;
     }
+    faceLostAt.current = null;
     setStep("face", "COMPLETE");
 
     const lm = faces[0];
@@ -274,13 +280,12 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
     const faceW = maxX - minX;
     const faceH = maxY - minY;
 
-    if (faceW < 0.16) {
+    if (faceW < RPPG_CONFIG.acquisition.minFaceWidth) {
       framesRef.current = [];
       setStatus((s) => ({ ...s, faceCount: 1, elapsedSec: 0, message: "Move closer to the camera." }));
       return;
     }
-    if (faceW > 0.85) {
-      framesRef.current = [];
+    if (faceW > RPPG_CONFIG.acquisition.maxFaceWidth) {
       setStatus((s) => ({ ...s, faceCount: 1, elapsedSec: 0, message: "Move slightly further away." }));
       return;
     }
@@ -391,7 +396,7 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
         const q = peak ? computeSignalQuality(peak.snrDb, peak.peakStrength, 0.5) : 0;
         preview = {
           waveform: Array.from(fused.subarray(Math.max(0, len - Math.round(fps * 6)))),
-          liveBpm: peak && q >= 45 ? peak.bpm : null,
+          liveBpm: peak && q >= 30 ? peak.bpm : null,
           liveQuality: Math.round(q),
         };
         // Adaptive duration: extend acquisition when the signal is weak.
