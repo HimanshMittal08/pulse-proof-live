@@ -48,8 +48,8 @@ export interface LiveStatus {
   liveQuality: number | null;
 }
 
-const MIN_SECONDS = RPPG_CONFIG.acquisition.minSec;
-const MAX_SECONDS = RPPG_CONFIG.acquisition.maxSec;
+const MIN_SECONDS: number = RPPG_CONFIG.acquisition.minSec;
+const MAX_SECONDS: number = RPPG_CONFIG.acquisition.maxSec;
 const SAMPLE_WIDTH = 256;
 
 const initialStatus: LiveStatus = {
