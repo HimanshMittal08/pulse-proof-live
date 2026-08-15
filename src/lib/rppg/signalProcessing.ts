@@ -5,8 +5,8 @@
 
 import { RPPG_CONFIG } from "./config";
 
-export const HR_MIN_HZ = RPPG_CONFIG.band.minHz; // 42 BPM
-export const HR_MAX_HZ = RPPG_CONFIG.band.maxHz; // 210 BPM
+export const HR_MIN_HZ: number = RPPG_CONFIG.band.minHz; // 42 BPM
+export const HR_MAX_HZ: number = RPPG_CONFIG.band.maxHz; // 210 BPM
 
 /** Median of a numeric list (0 when empty). */
 export function median(x: number[]): number {
