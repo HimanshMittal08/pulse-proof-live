@@ -12,6 +12,7 @@ import { analyzeFrames, estimateFps, regionWaveform } from "@/lib/rppg/analyze";
 import { defaultClassifier } from "@/lib/rppg/scoring";
 import { computeLighting } from "@/lib/rppg/quality";
 import { computeMotion } from "@/lib/rppg/motion";
+import { RPPG_CONFIG } from "@/lib/rppg/config";
 import { dominantFrequency, welchPsd, clamp } from "@/lib/rppg/signalProcessing";
 import { computeSignalQuality } from "@/lib/rppg/quality";
 
@@ -47,8 +48,8 @@ export interface LiveStatus {
   liveQuality: number | null;
 }
 
-const MIN_SECONDS = 12;
-const MAX_SECONDS = 20;
+const MIN_SECONDS = RPPG_CONFIG.acquisition.minSec;
+const MAX_SECONDS = RPPG_CONFIG.acquisition.maxSec;
 const SAMPLE_WIDTH = 256;
 
 const initialStatus: LiveStatus = {

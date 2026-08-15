@@ -172,6 +172,7 @@ describe("quality, motion and scoring", () => {
       brightness: 120,
       overexposed: 0,
       underexposed: 0,
+      validRatio: 0.8,
     });
     const still = Array.from({ length: 30 }, (_, i) => mk(i, 0.0005));
     const shaky = Array.from({ length: 30 }, (_, i) => mk(i, 0.05));
@@ -192,8 +193,12 @@ const baseFeatures: LivenessFeatures = {
   spatialConsistency: 80,
   temporalConsistency: 75,
   motionStability: 88,
-  lighting: { label: "GOOD", score: 85, brightness: 140 },
+  lighting: { label: "GOOD", score: 85, brightness: 140, variance: 5 },
   regions: [],
+  periodicity: 0.6,
+  frequencyAgreement: 0.85,
+  validPixelRatio: 0.8,
+  supportingWindows: 3,
   bpmSegments: [71, 72, 73, 72],
 };
 
@@ -207,7 +212,7 @@ describe("verdict engine", () => {
   it("never returns synthetic for poor lighting", () => {
     const v = clf.classify({
       ...baseFeatures,
-      lighting: { label: "POOR", score: 20, brightness: 30 },
+      lighting: { label: "POOR", score: 20, brightness: 30, variance: 5 },
     });
     expect(v.label).toBe("INSUFFICIENT_EVIDENCE");
   });
