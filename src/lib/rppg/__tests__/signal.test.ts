@@ -239,6 +239,8 @@ describe("verdict engine", () => {
       signalQuality: 50,
       spatialConsistency: 12,
       temporalConsistency: 10,
+      periodicity: 0.05,
+      frequencyAgreement: 0.1,
       motionStability: 92,
     });
     expect(v.label).toBe("LIKELY_SYNTHETIC");
@@ -248,6 +250,6 @@ describe("verdict engine", () => {
     const a = biologicalEvidenceScore(baseFeatures);
     const b = biologicalEvidenceScore(baseFeatures);
     expect(a).toBe(b);
-    expect(a).toBeGreaterThan(biologicalEvidenceScore({ ...baseFeatures, signalQuality: 10 }));
+    expect(a).toBeGreaterThan(biologicalEvidenceScore({ ...baseFeatures, periodicity: 0.05, temporalConsistency: 10 }));
   });
 });
