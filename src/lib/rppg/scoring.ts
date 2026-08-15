@@ -1,96 +1,119 @@
-import type {
-  BiologicalLivenessClassifier,
-  LivenessFeatures,
-  Verdict,
-} from "@/types/biometrics";
+import type { LivenessEngine, LivenessFeatures, Verdict } from "@/types/biometrics";
 import { clamp } from "./signalProcessing";
+import { spectralScore } from "./quality";
+import { RPPG_CONFIG } from "./config";
 
-export const EVIDENCE_WEIGHTS = {
-  signalQuality: 0.25,
-  spatialConsistency: 0.2,
-  temporalConsistency: 0.2,
-  spectral: 0.2,
-  motionStability: 0.1,
-  lighting: 0.05,
-} as const;
+export const EVIDENCE_WEIGHTS = RPPG_CONFIG.weights;
 
-/** Spectral sub-score from SNR and peak concentration (both measured). */
-export function spectralScore(snrDb: number, peakStrength: number): number {
-  const snr = clamp(((snrDb + 5) / 15) * 100);
-  const peak = clamp(((peakStrength - 0.15) / 0.5) * 100);
-  return clamp(0.6 * snr + 0.4 * peak);
-}
+export { spectralScore };
 
+/**
+ * Weighted biological evidence, 0-100. Every input is measured from the
+ * camera feed; nothing here is fixed or simulated.
+ */
 export function biologicalEvidenceScore(f: LivenessFeatures): number {
   const w = EVIDENCE_WEIGHTS;
   return clamp(
-    w.signalQuality * f.signalQuality +
-      w.spatialConsistency * f.spatialConsistency +
-      w.temporalConsistency * f.temporalConsistency +
-      w.spectral * spectralScore(f.snrDb, f.peakStrength) +
-      w.motionStability * f.motionStability +
+    w.spectral * spectralScore(f.snrDb, f.peakStrength) +
+      w.periodicity * clamp(f.periodicity * 100) +
+      w.temporal * f.temporalConsistency +
+      w.spatial * f.spatialConsistency +
+      w.motion * f.motionStability +
       w.lighting * f.lighting.score,
   );
 }
 
 /**
- * Baseline rule-based engine. Conservative by design: weak acquisition maps to
- * INSUFFICIENT_EVIDENCE, never to LIKELY_SYNTHETIC.
- * Swap this implementation for a trained model behind the same interface.
+ * Biological evidence engine. Conservative about claiming SYNTHETIC, but it
+ * does not treat imperfect metrics as a reason to withhold a verdict: when a
+ * physiological signal is genuinely measurable, the result is LIKELY REAL with
+ * an evidence strength that reflects the measurement.
  */
-export class RuleBasedLivenessClassifier implements BiologicalLivenessClassifier {
-  readonly name = "rule-based-v1";
+export class BiologicalEvidenceEngine implements LivenessEngine {
+  readonly name = "biological-evidence-v2";
 
   classify(f: LivenessFeatures): Verdict {
+    const t = RPPG_CONFIG.thresholds;
     const evidence = biologicalEvidenceScore(f);
     const reasons: string[] = [];
+    const advice: string[] = [];
 
-    const acquisitionOk =
-      f.durationSec >= 8 && f.fps >= 10 && f.lighting.label !== "POOR" && f.motionStability >= 50;
+    // --- Hard acquisition failures: the recording is genuinely unusable. ---
+    const blocking: string[] = [];
+    if (f.durationSec < 6) {
+      blocking.push("Not enough valid frames were captured.");
+      advice.push("Stay in frame for the full acquisition window.");
+    }
+    if (f.fps < 8) {
+      blocking.push(`Camera frame rate was too low (${f.fps.toFixed(1)} fps).`);
+      advice.push("Close other tabs or apps using the camera or CPU.");
+    }
+    if (f.lighting.label === "POOR") {
+      blocking.push(f.lighting.reason ?? "Lighting was insufficient.");
+      advice.push("Face a soft, even light source and avoid strong backlight.");
+    }
+    if (f.motionStability < 25) {
+      blocking.push("Face movement was too high for signal extraction.");
+      advice.push("Sit comfortably and avoid large head movements.");
+    }
+    if (f.validPixelRatio < 0.15) {
+      blocking.push("Too few valid skin pixels were sampled.");
+      advice.push("Keep the forehead and cheeks unobstructed and facing the camera.");
+    }
 
-    if (f.durationSec < 8) reasons.push("Acquisition window was too short.");
-    if (f.fps < 10) reasons.push(`Camera frame rate too low (${f.fps.toFixed(1)} fps).`);
-    if (f.lighting.label === "POOR")
-      reasons.push(f.lighting.reason ?? "Insufficient lighting for biological signal analysis.");
-    if (f.motionStability < 50) reasons.push("Excessive face movement during acquisition.");
-
-    if (!acquisitionOk) {
+    if (blocking.length > 0) {
       return {
         label: "INSUFFICIENT_EVIDENCE",
         evidenceStrength: Math.round(evidence),
-        reasons,
+        reasons: blocking,
         explanation:
-          "Acquisition conditions did not meet the minimum requirements for a reliable biological assessment.",
+          "Acquisition conditions prevented a reliable biological measurement. This is not an indication of a synthetic feed.",
+        advice,
       };
     }
 
-    const strongPulse =
-      f.bpm != null && f.signalQuality >= 55 && f.snrDb >= 1.5 && f.peakStrength >= 0.3;
-    const consistent = f.spatialConsistency >= 55 && f.temporalConsistency >= 55;
+    // --- Is a physiological signal actually detectable? ---
+    const plausible =
+      f.bpm != null && f.bpm >= t.plausibleBpm.min && f.bpm <= t.plausibleBpm.max;
+    const spectralOk =
+      f.snrDb >= t.detectableSnrDb || f.peakStrength >= t.detectablePeakStrength;
+    const repeats = f.periodicity >= 0.15 || f.temporalConsistency >= 45;
+    const detectable =
+      plausible && spectralOk && repeats && f.signalQuality >= t.detectableQuality;
 
-    if (strongPulse && consistent && evidence >= 62) {
+    const supported = f.supportingWindows >= t.supportingWindows;
+    const regionsAgree = f.regions.length < 2 || f.frequencyAgreement >= 0.4;
+
+    if (detectable && (evidence >= t.evidenceForReal || (supported && regionsAgree))) {
+      reasons.push(`Pulse-related component at ${f.bpm!.toFixed(0)} BPM.`);
+      reasons.push(`In-band SNR ${f.snrDb.toFixed(1)} dB, signal quality ${f.signalQuality.toFixed(0)}/100.`);
+      reasons.push(
+        `${f.supportingWindows} of ${f.bpmSegments.length} analysis windows support this rate.`,
+      );
+      if (f.regions.length > 1) {
+        reasons.push(
+          `Frequency agreement across ${f.regions.length} facial regions: ${(f.frequencyAgreement * 100).toFixed(0)}%.`,
+        );
+      }
       return {
         label: "LIKELY_REAL",
-        evidenceStrength: Math.round(evidence),
-        reasons: [
-          `Pulse-related component at ${f.bpm!.toFixed(0)} BPM.`,
-          `In-band SNR ${f.snrDb.toFixed(1)} dB.`,
-          `Spatial consistency ${f.spatialConsistency.toFixed(0)}/100.`,
-        ],
+        evidenceStrength: Math.round(clamp(evidence, 40, 100)),
+        reasons,
         explanation:
-          "Consistent pulse-related signal components were detected across multiple facial regions with acceptable temporal stability.",
+          "Pulse-related signal activity was detected consistently across multiple facial regions and analysis windows.",
       };
     }
 
-    // Only claim synthetic when acquisition was genuinely good but biology is absent.
+    // --- Only claim synthetic when acquisition was good and biology absent. ---
     const highQualityAcquisition =
       f.lighting.label === "GOOD" &&
-      f.motionStability >= 75 &&
+      f.motionStability >= 70 &&
       f.fps >= 20 &&
       f.durationSec >= 10 &&
-      f.signalQuality >= 45;
+      f.validPixelRatio >= 0.4 &&
+      f.signalQuality >= 40;
     const biologyAbsent =
-      f.spatialConsistency < 30 && (f.temporalConsistency < 30 || f.bpm == null);
+      f.spatialConsistency < 30 && f.temporalConsistency < 30 && f.periodicity < 0.2;
 
     if (highQualityAcquisition && biologyAbsent) {
       return {
@@ -102,22 +125,36 @@ export class RuleBasedLivenessClassifier implements BiologicalLivenessClassifier
           `Temporal consistency only ${f.temporalConsistency.toFixed(0)}/100.`,
         ],
         explanation:
-          "High-quality facial signal acquisition was successful, but expected biological consistency was not observed across the analyzed regions.",
+          "Biological signal acquisition was successful, but expected physiological consistency was not observed.",
       };
     }
 
-    if (!strongPulse) reasons.push("Pulse-related signal was too weak or too noisy.");
-    if (!consistent) reasons.push("Region and segment measurements did not agree sufficiently.");
+    if (!plausible) {
+      reasons.push("No physiologically plausible pulse rate could be isolated.");
+      advice.push("Look directly at the camera and keep your face inside the frame.");
+    } else if (!spectralOk || f.signalQuality < t.detectableQuality) {
+      reasons.push(
+        `Pulse-related signal was too weak (SNR ${f.snrDb.toFixed(1)} dB, quality ${f.signalQuality.toFixed(0)}/100).`,
+      );
+      advice.push("Use even, front-facing lighting and remain naturally still.");
+    }
+    if (!supported && plausible) {
+      reasons.push("Analysis windows did not agree on a stable pulse rate.");
+    }
 
     return {
       label: "INSUFFICIENT_EVIDENCE",
       evidenceStrength: Math.round(evidence),
       reasons,
       explanation:
-        "Biological signal quality was too weak for a reliable assessment. This does not indicate a synthetic feed — it means the evidence was inconclusive.",
+        "The biological signal was too weak for a reliable assessment. This does not indicate a synthetic feed — the evidence was inconclusive.",
+      advice,
     };
   }
 }
 
-export const defaultClassifier: BiologicalLivenessClassifier =
-  new RuleBasedLivenessClassifier();
+/** @deprecated retained for compatibility; use BiologicalEvidenceEngine. */
+export const RuleBasedLivenessClassifier = BiologicalEvidenceEngine;
+
+export const defaultClassifier: LivenessEngine = new BiologicalEvidenceEngine();
+export const defaultEngine = defaultClassifier;
