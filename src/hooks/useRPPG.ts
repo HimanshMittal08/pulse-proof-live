@@ -314,6 +314,7 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
     let brightness = 0;
     let over = 0;
     let under = 0;
+    let validSum = 0;
     let count = 0;
     (Object.keys(ANCHORS) as RegionName[]).forEach((name) => {
       const anchor = lm[ANCHORS[name]];
@@ -329,10 +330,11 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
         faceH * rh * sh,
       );
       if (!stats) return;
-      regions[name] = { t: now, r: stats.r, g: stats.g, b: stats.b };
+      regions[name] = { t: now, r: stats.r, g: stats.g, b: stats.b, valid: stats.valid };
       brightness += stats.brightness;
       over += stats.over;
       under += stats.under;
+      validSum += stats.valid;
       count++;
     });
     if (count === 0) return;
@@ -347,6 +349,7 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
       brightness: brightness / count,
       overexposed: over / count,
       underexposed: under / count,
+      validRatio: validSum / count,
     };
     framesRef.current.push(frame);
     const buf = framesRef.current;
@@ -354,19 +357,10 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
 
     setStep("signal", "PROCESSING");
 
-    const recent = buf.slice(-20);
-    const motion = computeMotion(recent);
-    if (motion.excessive && buf.length > 10) {
-      framesRef.current = buf.slice(-5);
-      setStatus((s) => ({
-        ...s,
-        faceCount: 1,
-        stability: motion.stability,
-        elapsedSec: 0,
-        message: "Please keep your face steady.",
-      }));
-      return;
-    }
+    // Motion is scored continuously; heavy movement lowers quality but never
+    // discards the recording (natural movement must not reset acquisition).
+    const motion = computeMotion(buf.slice(-45));
+
 
     const elapsed = (frame.t - buf[0].t) / 1000;
     const fps = estimateFps(buf);
