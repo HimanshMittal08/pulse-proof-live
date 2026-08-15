@@ -3,8 +3,32 @@
  * Pure functions only — no randomness, no UI concerns.
  */
 
-export const HR_MIN_HZ = 0.7; // 42 BPM
-export const HR_MAX_HZ = 4.0; // 240 BPM
+import { RPPG_CONFIG } from "./config";
+
+export const HR_MIN_HZ = RPPG_CONFIG.band.minHz; // 42 BPM
+export const HR_MAX_HZ = RPPG_CONFIG.band.maxHz; // 210 BPM
+
+/** Median of a numeric list (0 when empty). */
+export function median(x: number[]): number {
+  const v = x.filter((n) => isFinite(n)).sort((a, b) => a - b);
+  if (v.length === 0) return 0;
+  const mid = v.length >> 1;
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
+/**
+ * Robust consensus of BPM estimates: median, then mean of the values within
+ * `tolerance` BPM of it (obvious outliers are discarded, not failed).
+ */
+export function robustConsensus(values: (number | null)[], tolerance = 12): number | null {
+  const v = values.filter((x): x is number => x != null && isFinite(x));
+  if (v.length === 0) return null;
+  const med = median(v);
+  const inliers = v.filter((x) => Math.abs(x - med) <= tolerance);
+  const use = inliers.length ? inliers : [med];
+  return use.reduce((a, b) => a + b, 0) / use.length;
+}
+
 
 export function mean(x: ArrayLike<number>): number {
   if (x.length === 0) return 0;
