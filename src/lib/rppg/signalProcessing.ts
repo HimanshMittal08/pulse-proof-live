@@ -159,7 +159,7 @@ export function welchPsd(x: Float32Array, fs: number, segLen?: number): Spectrum
     const sp = powerSpectrum(new Float32Array(seg), fs);
     if (!acc) {
       acc = new Float32Array(sp.power.length);
-      freqs = sp.freqs;
+      freqs = new Float32Array(sp.freqs);
     }
     for (let i = 0; i < acc.length; i++) acc[i] += sp.power[i];
     count++;
