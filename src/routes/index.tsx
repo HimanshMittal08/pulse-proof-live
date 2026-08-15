@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, CameraOff, Fingerprint, Lock, RadioTower, ScanFace } from "lucide-react";
 import { useCamera } from "@/hooks/useCamera";
 import { useRPPG } from "@/hooks/useRPPG";
@@ -78,14 +78,30 @@ function PulseProof() {
   const rppg = useRPPG(videoRef);
   const [started, setStarted] = useState(false);
 
-  const begin = useCallback(async () => {
+  const [runToken, setRunToken] = useState(0);
+
+  const begin = useCallback(() => {
     setStarted(true);
-    rppg.reset();
-    const video = videoRef.current;
-    if (!video) return;
-    const ok = await camera.start(video);
-    if (ok) await rppg.start();
-  }, [camera, rppg]);
+    setRunToken((t) => t + 1);
+  }, []);
+
+  // The <video> element only exists once the session UI is mounted, so the
+  // camera + tracking pipeline is started after that render commits.
+  useEffect(() => {
+    if (runToken === 0) return;
+    let cancelled = false;
+    (async () => {
+      const video = videoRef.current;
+      if (!video) return;
+      rppg.reset();
+      const ok = await camera.start(video);
+      if (!cancelled && ok) await rppg.start();
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runToken]);
 
   const restart = useCallback(async () => {
     rppg.reset();
