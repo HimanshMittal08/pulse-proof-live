@@ -22,6 +22,7 @@ import { pos } from "./pos";
 import { chrom } from "./chrom";
 import { computeLighting, computeSignalQuality } from "./quality";
 import { computeMotion } from "./motion";
+import { computeTemporalLiveness } from "./temporal";
 import { periodicityScore } from "./periodicity";
 import { RPPG_CONFIG } from "./config";
 
