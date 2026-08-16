@@ -71,7 +71,25 @@ export interface LivenessFeatures {
   bpmSegments: (number | null)[];
   /** windows whose BPM supports the consensus estimate */
   supportingWindows: number;
+  /** measured evidence that the camera content actually changes over time */
+  temporalLiveness: TemporalLiveness;
 }
+
+export interface TemporalLiveness {
+  /** 0-100 combined temporal-change score */
+  score: number;
+  /** std of face position over the recording, normalised by face width */
+  positionVariation: number;
+  /** std of face width over the recording, normalised by face width */
+  scaleVariation: number;
+  /** median frame-to-frame fractional ROI colour change */
+  roiChange: number;
+  /** std of ROI brightness over the recording, normalised */
+  brightnessVariation: number;
+  /** true when the input looks like a static image rather than a live subject */
+  isStatic: boolean;
+}
+
 
 export type VerdictLabel = "LIKELY_REAL" | "LIKELY_SYNTHETIC" | "INSUFFICIENT_EVIDENCE";
 

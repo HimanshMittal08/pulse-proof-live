@@ -182,7 +182,17 @@ describe("quality, motion and scoring", () => {
   });
 });
 
+const liveTemporal = {
+  score: 70,
+  positionVariation: 0.006,
+  scaleVariation: 0.004,
+  roiChange: 0.002,
+  brightnessVariation: 0.008,
+  isStatic: false,
+};
+
 const baseFeatures: LivenessFeatures = {
+  temporalLiveness: liveTemporal,
   frames: 360,
   durationSec: 12,
   fps: 30,
@@ -251,5 +261,27 @@ describe("verdict engine", () => {
     const b = biologicalEvidenceScore(baseFeatures);
     expect(a).toBe(b);
     expect(a).toBeGreaterThan(biologicalEvidenceScore({ ...baseFeatures, periodicity: 0.05, temporalConsistency: 10 }));
+  });
+});
+
+describe("temporal liveness gate", () => {
+  it("blocks LIKELY_REAL for a static image even with clean-looking signals", () => {
+    const v = new RuleBasedLivenessClassifier().classify({
+      ...baseFeatures,
+      temporalLiveness: {
+        score: 4,
+        positionVariation: 0.0002,
+        scaleVariation: 0.0001,
+        roiChange: 0.00005,
+        brightnessVariation: 0.0004,
+        isStatic: true,
+      },
+    });
+    expect(v.label).toBe("INSUFFICIENT_EVIDENCE");
+    expect(v.reasons.join(" ")).toMatch(/static\/non-live/);
+  });
+
+  it("still allows LIKELY_REAL for a live subject", () => {
+    expect(new RuleBasedLivenessClassifier().classify(baseFeatures).label).toBe("LIKELY_REAL");
   });
 });

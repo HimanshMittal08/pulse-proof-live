@@ -22,6 +22,7 @@ import { pos } from "./pos";
 import { chrom } from "./chrom";
 import { computeLighting, computeSignalQuality } from "./quality";
 import { computeMotion } from "./motion";
+import { computeTemporalLiveness } from "./temporal";
 import { periodicityScore } from "./periodicity";
 import { RPPG_CONFIG } from "./config";
 
@@ -243,6 +244,7 @@ export function analyzeFrames(frames: FrameSample[]): LivenessFeatures | null {
     frames.reduce((s, f) => s + f.validRatio, 0) / Math.max(1, frames.length);
 
   return {
+    temporalLiveness: computeTemporalLiveness(frames),
     frames: frames.length,
     durationSec,
     fps,
