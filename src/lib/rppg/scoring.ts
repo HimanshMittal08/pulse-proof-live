@@ -110,6 +110,29 @@ export class BiologicalEvidenceEngine implements LivenessEngine {
       };
     }
 
+    // --- Stage 1b: temporal liveness gate. ---
+    // A live subject continuously changes the camera content (micro-movement,
+    // expression, illumination drift, physiological colour modulation). A
+    // static photo, thumbnail or paused frame does not. Without measured
+    // temporal change, no LIKELY_REAL verdict may be issued.
+    const tl = f.temporalLiveness;
+    if (tl.isStatic) {
+      return {
+        label: "INSUFFICIENT_EVIDENCE",
+        evidenceStrength: Math.round(clamp(evidence * 0.5)),
+        reasons: [
+          "Input appears static/non-live; a live biological assessment could not be performed.",
+          `Temporal change score ${tl.score.toFixed(0)}/100 (head motion ${(tl.positionVariation * 100).toFixed(3)}%, ROI change ${(tl.roiChange * 100).toFixed(3)}%, illumination drift ${(tl.brightnessVariation * 100).toFixed(2)}%).`,
+          "This does not indicate an AI-generated image — only that no live, temporally changing subject was verified.",
+        ],
+        explanation:
+          "Insufficient temporal evidence of a live camera subject. The frames did not change in the way a live person in front of a camera always does.",
+        advice: [
+          "Point the camera at a live person rather than a photo or screen.",
+        ],
+      };
+    }
+
     // --- Stage 2: biological evidence (measured, graded, not all-or-nothing). ---
     const plausible =
       f.bpm != null && f.bpm >= t.plausibleBpm.min && f.bpm <= t.plausibleBpm.max;
@@ -121,7 +144,7 @@ export class BiologicalEvidenceEngine implements LivenessEngine {
     const indicators = syntheticIndicators(f);
 
     // Moderate biological evidence is enough — it does not need to be perfect.
-    if (measurable && (evidence >= 38 || f.supportingWindows >= t.supportingWindows)) {
+    if (measurable && tl.score >= 30 && (evidence >= 38 || f.supportingWindows >= t.supportingWindows)) {
       reasons.push(`Pulse-related component at ${f.bpm!.toFixed(0)} BPM.`);
       reasons.push(
         `In-band SNR ${f.snrDb.toFixed(1)} dB, signal quality ${f.signalQuality.toFixed(0)}/100.`,
@@ -130,6 +153,7 @@ export class BiologicalEvidenceEngine implements LivenessEngine {
         `${f.supportingWindows} of ${f.bpmSegments.length} analysis windows support this rate.`,
       );
       reasons.push(`Recording quality ${inputQuality.toFixed(0)}/100.`);
+      reasons.push(`Temporal liveness ${tl.score.toFixed(0)}/100 — the camera content changes over time as a live subject does.`);
       if (f.regions.length > 1) {
         reasons.push(
           `Frequency agreement across ${f.regions.length} facial regions: ${(f.frequencyAgreement * 100).toFixed(0)}%.`,
