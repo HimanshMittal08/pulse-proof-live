@@ -145,7 +145,7 @@ export class BiologicalEvidenceEngine implements LivenessEngine {
     }
 
     // --- Stage 3: synthetic evidence, only under a high-quality recording. ---
-    if (inputQuality >= 70 && f.signalQuality >= 40 && evidence < 30 && indicators.length >= 3) {
+    if (inputQuality >= 70 && f.signalQuality >= 40 && evidence < 40 && indicators.length >= 3) {
       return {
         label: "LIKELY_SYNTHETIC",
         evidenceStrength: Math.round(clamp(0.5 * (100 - evidence) + 0.5 * inputQuality, 40, 100)),
