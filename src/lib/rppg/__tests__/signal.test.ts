@@ -266,7 +266,7 @@ describe("verdict engine", () => {
 
 describe("temporal liveness gate", () => {
   it("blocks LIKELY_REAL for a static image even with clean-looking signals", () => {
-    const v = defaultClassifier.classify({
+    const v = new RuleBasedLivenessClassifier().classify({
       ...baseFeatures,
       temporalLiveness: {
         score: 4,
@@ -282,6 +282,6 @@ describe("temporal liveness gate", () => {
   });
 
   it("still allows LIKELY_REAL for a live subject", () => {
-    expect(defaultClassifier.classify(baseFeatures).label).toBe("LIKELY_REAL");
+    expect(new RuleBasedLivenessClassifier().classify(baseFeatures).label).toBe("LIKELY_REAL");
   });
 });
