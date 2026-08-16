@@ -243,6 +243,7 @@ export function analyzeFrames(frames: FrameSample[]): LivenessFeatures | null {
     frames.reduce((s, f) => s + f.validRatio, 0) / Math.max(1, frames.length);
 
   return {
+    temporalLiveness: computeTemporalLiveness(frames),
     frames: frames.length,
     durationSec,
     fps,
