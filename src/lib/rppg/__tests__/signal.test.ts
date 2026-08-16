@@ -182,7 +182,17 @@ describe("quality, motion and scoring", () => {
   });
 });
 
+const liveTemporal = {
+  score: 70,
+  positionVariation: 0.006,
+  scaleVariation: 0.004,
+  roiChange: 0.002,
+  brightnessVariation: 0.008,
+  isStatic: false,
+};
+
 const baseFeatures: LivenessFeatures = {
+  temporalLiveness: liveTemporal,
   frames: 360,
   durationSec: 12,
   fps: 30,
