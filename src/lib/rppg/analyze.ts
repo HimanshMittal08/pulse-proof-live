@@ -250,7 +250,9 @@ export function analyzeFrames(
     frames.reduce((s, f) => s + f.validRatio, 0) / Math.max(1, frames.length);
 
   return {
+    activeLiveness,
     temporalLiveness: computeTemporalLiveness(frames),
+
     frames: frames.length,
     durationSec,
     fps,
