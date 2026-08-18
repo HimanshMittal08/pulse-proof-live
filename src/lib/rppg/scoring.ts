@@ -110,7 +110,30 @@ export class BiologicalEvidenceEngine implements LivenessEngine {
       };
     }
 
-    // --- Stage 1b: temporal liveness gate. ---
+    // --- Stage 1b: active liveness (challenge-response). ---
+    // A detected face, changing pixels or even a pulse-like signal do not
+    // prove live presence. Only a requested, measured facial action does.
+    const al = f.activeLiveness;
+    if (!al.verified) {
+      return {
+        label: "INSUFFICIENT_EVIDENCE",
+        evidenceStrength: Math.round(clamp(evidence * 0.4)),
+        reasons: [
+          "Live presence could not be verified.",
+          al.reason ?? "The requested facial action was not observed.",
+          ...al.challenges.map((c) => c.detail),
+          "This does not indicate AI-generated or manipulated media — only that a live subject was not confirmed.",
+        ],
+        explanation:
+          "Live presence could not be verified: the requested facial action was not observed in the tracked face geometry, so no live biological assessment could be completed.",
+        advice: [
+          "Follow the on-screen instruction (head turn, blink or mouth movement) during the scan.",
+          "Point the camera at a live person rather than a photo, screen or paused video.",
+        ],
+      };
+    }
+
+    // --- Stage 1c: temporal liveness gate. ---
     // A live subject continuously changes the camera content (micro-movement,
     // expression, illumination drift, physiological colour modulation). A
     // static photo, thumbnail or paused frame does not. Without measured
@@ -132,6 +155,7 @@ export class BiologicalEvidenceEngine implements LivenessEngine {
         ],
       };
     }
+
 
     // --- Stage 2: biological evidence (measured, graded, not all-or-nothing). ---
     const plausible =
