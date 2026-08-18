@@ -90,6 +90,35 @@ export interface TemporalLiveness {
   isStatic: boolean;
 }
 
+/** Size-normalised head pose and facial-articulation measures. */
+export interface FaceGeometry {
+  /** degrees, relative facial geometry (not screen position) */
+  yaw: number;
+  pitch: number;
+  /** eye opening normalised by eye width */
+  eyeAspect: number;
+  /** mouth opening normalised by mouth width */
+  mouthAspect: number;
+}
+
+export type ChallengeType = "TURN_LEFT" | "TURN_RIGHT" | "BLINK" | "OPEN_MOUTH";
+
+export interface ChallengeResult {
+  type: ChallengeType;
+  passed: boolean;
+  /** measured magnitude of the observed facial action */
+  magnitude: number;
+  detail: string;
+}
+
+/** Outcome of the active-liveness challenge stage. */
+export interface ActiveLiveness {
+  verified: boolean;
+  challenges: ChallengeResult[];
+  reason?: string;
+}
+
+
 
 export type VerdictLabel = "LIKELY_REAL" | "LIKELY_SYNTHETIC" | "INSUFFICIENT_EVIDENCE";
 
