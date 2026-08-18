@@ -73,6 +73,9 @@ export interface LivenessFeatures {
   supportingWindows: number;
   /** measured evidence that the camera content actually changes over time */
   temporalLiveness: TemporalLiveness;
+  /** outcome of the active-liveness challenge stage */
+  activeLiveness: ActiveLiveness;
+
 }
 
 export interface TemporalLiveness {
