@@ -20,8 +20,25 @@ export const RPPG_CONFIG = {
     maxFaceWidth: 0.92,
   },
 
+  /** Active-liveness challenge tolerances (deliberately forgiving). */
+  challenge: {
+    /** frames of stable face used to establish the per-user baseline */
+    baselineFrames: 12,
+    /** relative yaw change (degrees) accepted as a genuine head turn */
+    yawDeltaDeg: 9,
+    /** eye opening must drop to this fraction of baseline to count as closed */
+    blinkCloseRatio: 0.62,
+    /** and recover to this fraction to complete the blink */
+    blinkOpenRatio: 0.85,
+    /** mouth-aspect increase accepted as an open mouth */
+    mouthOpenDelta: 0.12,
+    /** per-challenge time budget */
+    timeoutSec: 8,
+  },
+
   /** Overlapping temporal analysis windows. */
   window: { lengthSec: 6, strideSec: 3 },
+
 
   /** Skin-pixel acceptance (0-255 channels). */
   skin: {

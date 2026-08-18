@@ -1,9 +1,11 @@
 import type {
+  ActiveLiveness,
   FrameSample,
   LivenessFeatures,
   RegionAnalysis,
   RegionName,
 } from "@/types/biometrics";
+
 import {
   bandpass,
   clamp,
@@ -160,9 +162,13 @@ export function windowedBpms(
   return out;
 }
 
-export function analyzeFrames(frames: FrameSample[]): LivenessFeatures | null {
+export function analyzeFrames(
+  frames: FrameSample[],
+  activeLiveness: ActiveLiveness = { verified: false, challenges: [], reason: "Active liveness was not evaluated." },
+): LivenessFeatures | null {
   const fps = estimateFps(frames);
   if (frames.length < 45 || fps < 6) return null;
+
   const durationSec = (frames[frames.length - 1].t - frames[0].t) / 1000;
 
   const regions: RegionAnalysis[] = [];
@@ -244,7 +250,9 @@ export function analyzeFrames(frames: FrameSample[]): LivenessFeatures | null {
     frames.reduce((s, f) => s + f.validRatio, 0) / Math.max(1, frames.length);
 
   return {
+    activeLiveness,
     temporalLiveness: computeTemporalLiveness(frames),
+
     frames: frames.length,
     durationSec,
     fps,
