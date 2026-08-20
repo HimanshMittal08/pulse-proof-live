@@ -7,28 +7,39 @@ import type {
 import { RPPG_CONFIG } from "./config";
 
 export const CHALLENGE_PROMPT: Record<ChallengeType, string> = {
-  TURN_LEFT: "Slowly turn your head to your LEFT",
-  TURN_RIGHT: "Slowly turn your head to your RIGHT",
-  BLINK: "Blink once, clearly",
-  OPEN_MOUTH: "Open your mouth, then close it",
+  TURN_LEFT: "Turn your head slightly LEFT",
+  TURN_RIGHT: "Turn your head slightly RIGHT",
+  BLINK: "Please blink",
+  OPEN_MOUTH: "Please open your mouth",
 };
+
+const ALL: ChallengeType[] = ["TURN_LEFT", "TURN_RIGHT", "BLINK", "OPEN_MOUTH"];
 
 /**
  * Randomness is used ONLY to pick which challenges are requested, never to
  * influence any measurement or the final verdict. Unpredictable selection is
  * what stops a pre-recorded clip from satisfying a fixed scripted movement.
  */
-export function pickChallenges(rand: () => number = Math.random): ChallengeType[] {
-  const head: ChallengeType[] = ["TURN_LEFT", "TURN_RIGHT"];
-  const face: ChallengeType[] = ["BLINK", "OPEN_MOUTH"];
-  const a = head[Math.floor(rand() * head.length)] ?? "TURN_LEFT";
-  const b = face[Math.floor(rand() * face.length)] ?? "BLINK";
-  return rand() < 0.5 ? [a, b] : [b, a];
+export function pickChallenges(
+  rand: () => number = Math.random,
+  count = 1,
+  exclude: ChallengeType[] = [],
+): ChallengeType[] {
+  const pool = ALL.filter((c) => !exclude.includes(c));
+  const bag = (pool.length ? pool : ALL).slice();
+  const out: ChallengeType[] = [];
+  while (out.length < count && bag.length) {
+    out.push(bag.splice(Math.floor(rand() * bag.length), 1)[0]);
+  }
+  return out;
 }
+
+export type ChallengeState = "READY" | "DETECTING";
 
 export interface ChallengeTick {
   /** instruction currently shown to the user */
   prompt: string;
+  state: ChallengeState;
   index: number;
   total: number;
   /** true once every challenge has been resolved (passed or timed out) */
