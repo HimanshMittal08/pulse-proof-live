@@ -178,6 +178,7 @@ export class ChallengeRunner {
         };
         return {
           prompt: "",
+          state: "DETECTING",
           index: this.types.length,
           total: this.types.length,
           done: true,
@@ -188,6 +189,7 @@ export class ChallengeRunner {
 
     return {
       prompt: CHALLENGE_PROMPT[this.types[Math.min(this.i, this.types.length - 1)]],
+      state: "DETECTING",
       index: this.i,
       total: this.types.length,
       done: false,
