@@ -2,12 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FaceLandmarker } from "@mediapipe/tasks-vision";
 import { loadFaceLandmarker } from "@/lib/faceLandmarker";
 import type {
+  ActiveLiveness,
+  ChallengeType,
   FrameSample,
   LightingLabel,
   LivenessFeatures,
   RegionName,
   Verdict,
 } from "@/types/biometrics";
+import { ChallengeRunner, CHALLENGE_PROMPT, pickChallenges } from "@/lib/rppg/challenge";
+import { computeFaceGeometry } from "@/lib/rppg/faceGeometry";
 import { analyzeFrames, estimateFps, regionWaveform } from "@/lib/rppg/analyze";
 import { defaultClassifier } from "@/lib/rppg/scoring";
 import { computeLighting } from "@/lib/rppg/quality";
