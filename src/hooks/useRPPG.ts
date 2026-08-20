@@ -224,7 +224,14 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
     setStep("quality", "PROCESSING");
     // Yield a frame so the pipeline UI paints before the (synchronous) analysis.
     setTimeout(() => {
-      const f = analyzeFrames(framesRef.current);
+      const f = analyzeFrames(
+        framesRef.current,
+        livenessRef.current ?? {
+          verified: false,
+          challenges: [],
+          reason: "Active liveness was not evaluated.",
+        },
+      );
       if (!f) {
         setStep("quality", "COMPLETE");
         setStep("consistency", "COMPLETE");
