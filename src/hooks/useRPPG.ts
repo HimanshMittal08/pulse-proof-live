@@ -282,6 +282,9 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
       const lostSec = (now - faceLostAt.current) / 1000;
       if (faces.length > 1 || lostSec > RPPG_CONFIG.acquisition.faceLossResetSec) {
         framesRef.current = [];
+        // The active-liveness challenge restarts cleanly rather than failing
+        // when the face briefly leaves the frame.
+        if (!livenessRef.current) runnerRef.current?.resetCurrent();
       }
       setStep("face", "PROCESSING");
       setStep("roi", "WAITING");
