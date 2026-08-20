@@ -118,7 +118,8 @@ export class ChallengeRunner {
         this.startedAt = t;
       }
       return {
-        prompt: "Hold still…",
+        prompt: "Get ready…",
+        state: "READY",
         index: this.i,
         total: this.types.length,
         done: false,
