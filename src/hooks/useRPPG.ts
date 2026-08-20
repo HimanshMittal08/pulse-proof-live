@@ -80,6 +80,10 @@ const initialStatus: LiveStatus = {
   waveform: [],
   liveBpm: null,
   liveQuality: null,
+  challengePrompt: "",
+  challengeState: "IDLE",
+  challengeAttempt: 1,
+  challengeAttempts: RPPG_CONFIG.challenge.maxAttempts,
 };
 
 // MediaPipe Face Mesh landmark indices used as ROI anchors.
