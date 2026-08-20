@@ -2,12 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FaceLandmarker } from "@mediapipe/tasks-vision";
 import { loadFaceLandmarker } from "@/lib/faceLandmarker";
 import type {
+  ActiveLiveness,
+  ChallengeType,
   FrameSample,
   LightingLabel,
   LivenessFeatures,
   RegionName,
   Verdict,
 } from "@/types/biometrics";
+import { ChallengeRunner, CHALLENGE_PROMPT, pickChallenges } from "@/lib/rppg/challenge";
+import { computeFaceGeometry } from "@/lib/rppg/faceGeometry";
 import { analyzeFrames, estimateFps, regionWaveform } from "@/lib/rppg/analyze";
 import { defaultClassifier } from "@/lib/rppg/scoring";
 import { computeLighting } from "@/lib/rppg/quality";
@@ -19,10 +23,20 @@ import { computeSignalQuality } from "@/lib/rppg/quality";
 export type SessionPhase =
   | "idle"
   | "initializing"
+  | "challenge"
   | "acquiring"
   | "analyzing"
   | "complete"
   | "error";
+
+export type ChallengeUiState =
+  | "IDLE"
+  | "READY"
+  | "PROMPT"
+  | "DETECTING"
+  | "RETRY"
+  | "PASSED"
+  | "FAILED";
 
 export type StepStatus = "WAITING" | "PROCESSING" | "COMPLETE";
 export type StepId =
@@ -46,6 +60,12 @@ export interface LiveStatus {
   waveform: number[];
   liveBpm: number | null;
   liveQuality: number | null;
+  /** active-liveness instruction currently shown to the user */
+  challengePrompt: string;
+  challengeState: ChallengeUiState;
+  /** 1-based attempt number of the active-liveness stage */
+  challengeAttempt: number;
+  challengeAttempts: number;
 }
 
 const MIN_SECONDS: number = RPPG_CONFIG.acquisition.minSec;
@@ -64,6 +84,10 @@ const initialStatus: LiveStatus = {
   waveform: [],
   liveBpm: null,
   liveQuality: null,
+  challengePrompt: "",
+  challengeState: "IDLE",
+  challengeAttempt: 1,
+  challengeAttempts: RPPG_CONFIG.challenge.maxAttempts,
 };
 
 // MediaPipe Face Mesh landmark indices used as ROI anchors.
@@ -175,6 +199,11 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
   const lastPreview = useRef(0);
   const targetRef = useRef(MIN_SECONDS);
   const faceLostAt = useRef<number | null>(null);
+  const runnerRef = useRef<ChallengeRunner | null>(null);
+  const livenessRef = useRef<ActiveLiveness | null>(null);
+  const attemptRef = useRef(1);
+  const usedChallengesRef = useRef<ChallengeType[]>([]);
+  const passedAtRef = useRef(0);
 
   const setStep = useCallback((id: StepId, s: StepStatus) => {
     setSteps((prev) => (prev[id] === s ? prev : { ...prev, [id]: s }));
@@ -195,7 +224,14 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
     setStep("quality", "PROCESSING");
     // Yield a frame so the pipeline UI paints before the (synchronous) analysis.
     setTimeout(() => {
-      const f = analyzeFrames(framesRef.current);
+      const f = analyzeFrames(
+        framesRef.current,
+        livenessRef.current ?? {
+          verified: false,
+          challenges: [],
+          reason: "Active liveness was not evaluated.",
+        },
+      );
       if (!f) {
         setStep("quality", "COMPLETE");
         setStep("consistency", "COMPLETE");
@@ -246,6 +282,9 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
       const lostSec = (now - faceLostAt.current) / 1000;
       if (faces.length > 1 || lostSec > RPPG_CONFIG.acquisition.faceLossResetSec) {
         framesRef.current = [];
+        // The active-liveness challenge restarts cleanly rather than failing
+        // when the face briefly leaves the frame.
+        if (!livenessRef.current) runnerRef.current?.resetCurrent();
       }
       setStep("face", "PROCESSING");
       setStep("roi", "WAITING");
@@ -287,6 +326,100 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
     }
     if (faceW > RPPG_CONFIG.acquisition.maxFaceWidth) {
       setStatus((s) => ({ ...s, faceCount: 1, elapsedSec: 0, message: "Move slightly further away." }));
+      return;
+    }
+
+    // --- Active-liveness stage (runs before rPPG acquisition) ---
+    // Decisions come only from size-normalised facial geometry, so camera or
+    // phone movement, noise and exposure changes cannot satisfy a challenge.
+    if (!livenessRef.current) {
+      const geom = computeFaceGeometry(lm);
+      if (!geom) {
+        setStatus((s) => ({ ...s, faceCount: 1, message: "Keep your whole face in view." }));
+        return;
+      }
+      if (!runnerRef.current) {
+        runnerRef.current = new ChallengeRunner(pickChallenges(Math.random, 1));
+        usedChallengesRef.current = [...runnerRef.current.challenges];
+      }
+      const tick = runnerRef.current.update(geom, now);
+
+      if (tick.done && tick.result) {
+        if (tick.result.verified) {
+          livenessRef.current = tick.result;
+          passedAtRef.current = now;
+          // Head turns / mouth movement corrupt the pulse trace, so rPPG
+          // acquisition starts from a clean buffer.
+          framesRef.current = [];
+          setPhase("acquiring");
+          setStatus((s) => ({
+            ...s,
+            faceCount: 1,
+            elapsedSec: 0,
+            challengeState: "PASSED",
+            challengePrompt: "✓ Liveness verified",
+            message: "Liveness verified — acquiring biological signal…",
+          }));
+          return;
+        }
+        if (attemptRef.current < RPPG_CONFIG.challenge.maxAttempts) {
+          // One retry with a NEW, clearly different instruction.
+          attemptRef.current += 1;
+          const next = pickChallenges(Math.random, 1, usedChallengesRef.current);
+          usedChallengesRef.current.push(...next);
+          runnerRef.current = new ChallengeRunner(next);
+          setStatus((s) => ({
+            ...s,
+            faceCount: 1,
+            challengeAttempt: attemptRef.current,
+            challengeState: "RETRY",
+            challengePrompt: `Let's try again — ${CHALLENGE_PROMPT[next[0]]}`,
+            message: "Please try again.",
+          }));
+          return;
+        }
+        // Failed after the allowed retry: live presence not verified. This is
+        // never reported as synthetic.
+        const failed = tick.result;
+        livenessRef.current = failed;
+        runningRef.current = false;
+        setStatus((s) => ({
+          ...s,
+          challengeState: "FAILED",
+          challengePrompt: "Live presence could not be verified",
+          message: "Live presence could not be verified.",
+        }));
+        setStep("verdict", "COMPLETE");
+        setVerdict({
+          label: "INSUFFICIENT_EVIDENCE",
+          evidenceStrength: 0,
+          reasons: [
+            "Live presence could not be verified.",
+            failed.reason ?? "The requested facial action was not observed.",
+            ...failed.challenges.map((c) => c.detail),
+            "This does not indicate AI-generated or manipulated media — only that a live subject was not confirmed.",
+          ],
+          explanation:
+            "The requested facial action was not observed in the tracked face geometry, so no live biological assessment could be completed.",
+          advice: [
+            "Follow the on-screen instruction during the scan.",
+            "Point the camera at a live person rather than a photo, screen or paused video.",
+          ],
+        });
+        setFeatures(null);
+        setPhase("complete");
+        return;
+      }
+
+      setStatus((s) => ({
+        ...s,
+        faceCount: 1,
+        elapsedSec: 0,
+        challengeAttempt: attemptRef.current,
+        challengeState: tick.state === "READY" ? "READY" : "PROMPT",
+        challengePrompt: tick.prompt,
+        message: tick.state === "READY" ? "Get ready…" : "Detecting…",
+      }));
       return;
     }
 
