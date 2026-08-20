@@ -56,6 +56,12 @@ export interface LiveStatus {
   waveform: number[];
   liveBpm: number | null;
   liveQuality: number | null;
+  /** active-liveness instruction currently shown to the user */
+  challengePrompt: string;
+  challengeState: ChallengeUiState;
+  /** 1-based attempt number of the active-liveness stage */
+  challengeAttempt: number;
+  challengeAttempts: number;
 }
 
 const MIN_SECONDS: number = RPPG_CONFIG.acquisition.minSec;
