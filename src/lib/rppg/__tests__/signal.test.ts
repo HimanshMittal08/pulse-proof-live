@@ -192,6 +192,7 @@ const liveTemporal = {
 };
 
 const baseFeatures: LivenessFeatures = {
+  activeLiveness: { verified: true, challenges: [] },
   temporalLiveness: liveTemporal,
   frames: 360,
   durationSec: 12,
