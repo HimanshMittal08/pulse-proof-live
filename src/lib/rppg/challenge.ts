@@ -148,12 +148,11 @@ export class ChallengeRunner {
       magnitude = this.peak;
       passed = this.returned && open;
     } else {
-      const opened = g.mouthAspect > this.baseline.mouth + C.mouthOpenDelta;
-      if (opened) this.returned = true;
-      const closedAgain = g.mouthAspect < this.baseline.mouth + C.mouthOpenDelta * 0.4;
+      // Tolerant: a clearly opened mouth is sufficient; closing again is not
+      // required, so a natural, brief movement passes.
       this.peak = Math.max(this.peak, g.mouthAspect - this.baseline.mouth);
       magnitude = this.peak;
-      passed = this.returned && closedAgain;
+      passed = this.peak >= C.mouthOpenDelta;
     }
 
     if (passed || elapsed > C.timeoutSec) {
