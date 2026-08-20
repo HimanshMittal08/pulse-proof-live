@@ -91,6 +91,7 @@ export class ChallengeRunner {
     if (this.finished) {
       return {
         prompt: "",
+        state: "DETECTING",
         index: this.types.length,
         total: this.types.length,
         done: true,
