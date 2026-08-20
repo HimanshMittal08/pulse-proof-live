@@ -19,10 +19,20 @@ import { computeSignalQuality } from "@/lib/rppg/quality";
 export type SessionPhase =
   | "idle"
   | "initializing"
+  | "challenge"
   | "acquiring"
   | "analyzing"
   | "complete"
   | "error";
+
+export type ChallengeUiState =
+  | "IDLE"
+  | "READY"
+  | "PROMPT"
+  | "DETECTING"
+  | "RETRY"
+  | "PASSED"
+  | "FAILED";
 
 export type StepStatus = "WAITING" | "PROCESSING" | "COMPLETE";
 export type StepId =
