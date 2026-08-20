@@ -195,6 +195,11 @@ export function useRPPG(videoRef: React.RefObject<HTMLVideoElement | null>) {
   const lastPreview = useRef(0);
   const targetRef = useRef(MIN_SECONDS);
   const faceLostAt = useRef<number | null>(null);
+  const runnerRef = useRef<ChallengeRunner | null>(null);
+  const livenessRef = useRef<ActiveLiveness | null>(null);
+  const attemptRef = useRef(1);
+  const usedChallengesRef = useRef<ChallengeType[]>([]);
+  const passedAtRef = useRef(0);
 
   const setStep = useCallback((id: StepId, s: StepStatus) => {
     setSteps((prev) => (prev[id] === s ? prev : { ...prev, [id]: s }));
