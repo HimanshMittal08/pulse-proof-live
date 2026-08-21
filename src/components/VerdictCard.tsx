@@ -7,8 +7,8 @@ const CONFIG = {
     Icon: ShieldCheck,
     color: "var(--success)",
   },
-  LIKELY_SYNTHETIC: {
-    title: "LIKELY SYNTHETIC",
+  LIKELY_DEEPFAKE: {
+    title: "LIKELY DEEPFAKE",
     Icon: ShieldAlert,
     color: "var(--destructive)",
   },
