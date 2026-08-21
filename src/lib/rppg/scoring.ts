@@ -243,20 +243,6 @@ export class BiologicalEvidenceEngine implements LivenessEngine {
       };
     }
 
-    // --- Stage 3: synthetic evidence, only under a high-quality recording. ---
-    if (inputQuality >= 70 && f.signalQuality >= 40 && evidence < 40 && indicators.length >= 3) {
-      return {
-        label: "LIKELY_SYNTHETIC",
-        evidenceStrength: Math.round(clamp(0.5 * (100 - evidence) + 0.5 * inputQuality, 40, 100)),
-        reasons: [
-          `Recording quality was high (${inputQuality.toFixed(0)}/100), so analysis was reliable.`,
-          ...indicators,
-        ],
-        explanation:
-          "Multiple indicators were observed that are inconsistent with a typical live camera capture.",
-      };
-    }
-
     // --- Stage 4: analysable recording, but evidence inconclusive either way. ---
     if (!plausible) {
       reasons.push("No physiologically plausible pulse rate could be isolated.");
