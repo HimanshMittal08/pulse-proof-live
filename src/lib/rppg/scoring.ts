@@ -189,8 +189,35 @@ export class BiologicalEvidenceEngine implements LivenessEngine {
     const repeats = f.periodicity >= 0.12 || f.temporalConsistency >= 35;
     const measurable = plausible && (spectralOk || repeats);
 
-    const indicators = syntheticIndicators(f);
+    const synthetic = syntheticEvidenceScore(f);
+    const indicators = synthetic.indicators;
+    const s = t.synthetic;
 
+    // --- Stage 2: positive synthetic evidence, only under a reliable recording. ---
+    // Never reachable from poor lighting, motion, low frame count or a merely
+    // weak pulse: those never raise an indicator and never pass these gates.
+    const deepfake =
+      inputQuality >= s.minInputQuality &&
+      f.signalQuality >= s.minSignalQuality &&
+      evidence < s.maxBiologicalEvidence &&
+      indicators.length >= s.minIndicators &&
+      synthetic.score >= s.minScore;
+
+    if (deepfake) {
+      return {
+        label: "LIKELY_DEEPFAKE",
+        evidenceStrength: Math.round(clamp(0.6 * synthetic.score + 0.4 * inputQuality, 40, 100)),
+        reasons: [
+          `Recording quality was high (${inputQuality.toFixed(0)}/100), so analysis was reliable.`,
+          `Synthetic-indicator strength ${synthetic.score.toFixed(0)}/100 across ${indicators.length} independent measures.`,
+          ...indicators,
+        ],
+        explanation:
+          "Multiple temporal and synthetic-media indicators were detected. This is a probabilistic assessment, not proof of manipulation.",
+      };
+    }
+
+    // --- Stage 3: biological evidence (measured, graded, not all-or-nothing). ---
     // Moderate biological evidence is enough — it does not need to be perfect.
     if (measurable && tl.score >= 30 && (evidence >= 38 || f.supportingWindows >= t.supportingWindows)) {
       reasons.push(`Pulse-related component at ${f.bpm!.toFixed(0)} BPM.`);
