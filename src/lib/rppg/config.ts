@@ -77,6 +77,17 @@ export const RPPG_CONFIG = {
     evidenceForReal: 45,
     /** Windows that must support the consensus pulse. */
     supportingWindows: 2,
+    /**
+     * Gates for a LIKELY_DEEPFAKE verdict. All must be met: the recording must
+     * be reliable AND multiple positive manipulation indicators must fire.
+     */
+    synthetic: {
+      minInputQuality: 70,
+      minSignalQuality: 40,
+      maxBiologicalEvidence: 40,
+      minIndicators: 3,
+      minScore: 45,
+    },
   },
 } as const;
 
