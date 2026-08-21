@@ -13,7 +13,7 @@ import { pos } from "../pos";
 import { chrom } from "../chrom";
 import { computeLighting, computeSignalQuality } from "../quality";
 import { computeMotion } from "../motion";
-import { biologicalEvidenceScore, RuleBasedLivenessClassifier } from "../scoring";
+import { biologicalEvidenceScore, RuleBasedLivenessClassifier, syntheticEvidenceScore } from "../scoring";
 import { bpmAgreement } from "../analyze";
 import type { FrameSample, LivenessFeatures } from "@/types/biometrics";
 
@@ -241,7 +241,7 @@ describe("verdict engine", () => {
     expect(v.label).toBe("INSUFFICIENT_EVIDENCE");
   });
 
-  it("only returns synthetic under high-quality acquisition with absent biology", () => {
+  it("returns LIKELY_DEEPFAKE under high-quality acquisition with positive synthetic indicators", () => {
     const v = clf.classify({
       ...baseFeatures,
       bpm: null,
@@ -254,7 +254,7 @@ describe("verdict engine", () => {
       frequencyAgreement: 0.1,
       motionStability: 92,
     });
-    expect(v.label).toBe("LIKELY_SYNTHETIC");
+    expect(v.label).toBe("LIKELY_DEEPFAKE");
   });
 
   it("evidence score is a deterministic weighted combination", () => {
@@ -284,5 +284,94 @@ describe("temporal liveness gate", () => {
 
   it("still allows LIKELY_REAL for a live subject", () => {
     expect(new RuleBasedLivenessClassifier().classify(baseFeatures).label).toBe("LIKELY_REAL");
+  });
+});
+
+describe("three-way fusion", () => {
+  const clf = new RuleBasedLivenessClassifier();
+
+  it("failed liveness challenge is never a deepfake verdict", () => {
+    const v = clf.classify({
+      ...baseFeatures,
+      activeLiveness: {
+        verified: false,
+        challenges: [],
+        reason: "The requested facial action was not observed.",
+      },
+      // suspicious-looking signals must not upgrade this to LIKELY_DEEPFAKE
+      periodicity: 0.02,
+      temporalConsistency: 5,
+      spatialConsistency: 5,
+      supportingWindows: 0,
+    });
+    expect(v.label).toBe("INSUFFICIENT_EVIDENCE");
+  });
+
+  it("static photo with a failed challenge is insufficient evidence", () => {
+    const v = clf.classify({
+      ...baseFeatures,
+      activeLiveness: { verified: false, challenges: [], reason: "No facial action observed." },
+      temporalLiveness: {
+        score: 3,
+        positionVariation: 0.0001,
+        scaleVariation: 0.0001,
+        roiChange: 0.00002,
+        brightnessVariation: 0.0002,
+        isStatic: true,
+      },
+    });
+    expect(v.label).toBe("INSUFFICIENT_EVIDENCE");
+  });
+
+  it("verified liveness with low recording quality is insufficient evidence", () => {
+    const v = clf.classify({
+      ...baseFeatures,
+      fps: 6,
+      durationSec: 5,
+      lighting: { label: "FAIR", score: 40, brightness: 70, variance: 8 },
+      motionStability: 40,
+      signalQuality: 20,
+    });
+    expect(v.label).toBe("INSUFFICIENT_EVIDENCE");
+  });
+
+  it("verified liveness with mixed/ambiguous evidence stays insufficient", () => {
+    const v = clf.classify({
+      ...baseFeatures,
+      bpm: null,
+      snrDb: 0,
+      peakStrength: 0.22,
+      periodicity: 0.3,
+      temporalConsistency: 45,
+      spatialConsistency: 40,
+      supportingWindows: 1,
+    });
+    expect(v.label).toBe("INSUFFICIENT_EVIDENCE");
+  });
+
+  it("verified liveness plus multiple positive synthetic indicators is a deepfake verdict", () => {
+    const v = clf.classify({
+      ...baseFeatures,
+      bpm: null,
+      snrDb: 1,
+      peakStrength: 0.28,
+      signalQuality: 55,
+      periodicity: 0.04,
+      temporalConsistency: 8,
+      spatialConsistency: 10,
+      frequencyAgreement: 0.05,
+      supportingWindows: 0,
+      motionStability: 92,
+      temporalLiveness: { ...liveTemporal, roiChange: 0.0001, positionVariation: 0.01 },
+    });
+    expect(v.label).toBe("LIKELY_DEEPFAKE");
+    expect(v.explanation).toMatch(/synthetic-media indicators/i);
+  });
+
+  it("synthetic evidence is deterministic", () => {
+    expect(syntheticEvidenceScore(baseFeatures).score).toBe(
+      syntheticEvidenceScore(baseFeatures).score,
+    );
+    expect(syntheticEvidenceScore(baseFeatures).indicators.length).toBe(0);
   });
 });

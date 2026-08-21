@@ -40,23 +40,47 @@ export function inputQualityScore(f: LivenessFeatures): number {
   );
 }
 
+export interface SyntheticEvidence {
+  /** 0-100 weighted strength of positive manipulation indicators */
+  score: number;
+  /** human-readable measured indicators */
+  indicators: string[];
+}
+
 /**
- * Count of measured indicators that are inconsistent with a live capture.
- * These are real measurements only — there is no trained deepfake model here.
+ * Positive, measured indicators of synthetic / replayed media. Every entry is
+ * derived from the captured signal — there is no trained deepfake model here,
+ * and no indicator fires purely because a recording was hard to analyse.
  */
-function syntheticIndicators(f: LivenessFeatures): string[] {
-  const out: string[] = [];
-  if (f.periodicity < 0.12) out.push(`No repeating pulse periodicity (${f.periodicity.toFixed(2)}).`);
+export function syntheticEvidenceScore(f: LivenessFeatures): SyntheticEvidence {
+  const indicators: string[] = [];
+  let score = 0;
+  const add = (weight: number, detail: string) => {
+    score += weight;
+    indicators.push(detail);
+  };
+
+  const tl = f.temporalLiveness;
+
+  // Pulse-band energy exists but never repeats: typical of rendered texture noise.
+  if (f.periodicity < 0.12 && f.peakStrength >= 0.2)
+    add(18, `Pulse-band energy is present but never repeats (periodicity ${f.periodicity.toFixed(2)}).`);
   if (f.temporalConsistency < 25)
-    out.push(`Temporal consistency only ${f.temporalConsistency.toFixed(0)}/100.`);
+    add(18, `Frame-to-frame pulse rate is unstable (temporal consistency ${f.temporalConsistency.toFixed(0)}/100).`);
   if (f.spatialConsistency < 25)
-    out.push(`Spatial consistency only ${f.spatialConsistency.toFixed(0)}/100.`);
+    add(16, `Facial regions are inconsistent with one another (spatial consistency ${f.spatialConsistency.toFixed(0)}/100).`);
   if (f.regions.length > 1 && f.frequencyAgreement < 0.2)
-    out.push(
-      `Facial regions disagree on pulse frequency (${(f.frequencyAgreement * 100).toFixed(0)}%).`,
-    );
-  if (f.supportingWindows === 0) out.push("No analysis window supported a stable pulse rate.");
-  return out;
+    add(16, `Facial regions disagree on pulse frequency (${(f.frequencyAgreement * 100).toFixed(0)}%).`);
+  if (f.supportingWindows === 0 && f.bpmSegments.length >= 3)
+    add(14, "No analysis window supported a stable pulse rate.");
+  // Face moves, but the skin surface does not respond: pasted / rendered face.
+  if (tl.positionVariation > 0.004 && tl.roiChange < 0.0005)
+    add(18, "Face moves while skin-region colour stays unnaturally constant (region artifact).");
+  // Strong global illumination flicker without head motion: screen replay.
+  if (tl.brightnessVariation > 0.06 && f.motionStability > 80)
+    add(14, `Illumination flickers independently of the subject (${(tl.brightnessVariation * 100).toFixed(1)}%), consistent with a replayed screen.`);
+
+  return { score: clamp(score), indicators };
 }
 
 /**
@@ -165,8 +189,35 @@ export class BiologicalEvidenceEngine implements LivenessEngine {
     const repeats = f.periodicity >= 0.12 || f.temporalConsistency >= 35;
     const measurable = plausible && (spectralOk || repeats);
 
-    const indicators = syntheticIndicators(f);
+    const synthetic = syntheticEvidenceScore(f);
+    const indicators = synthetic.indicators;
+    const s = t.synthetic;
 
+    // --- Stage 2: positive synthetic evidence, only under a reliable recording. ---
+    // Never reachable from poor lighting, motion, low frame count or a merely
+    // weak pulse: those never raise an indicator and never pass these gates.
+    const deepfake =
+      inputQuality >= s.minInputQuality &&
+      f.signalQuality >= s.minSignalQuality &&
+      evidence < s.maxBiologicalEvidence &&
+      indicators.length >= s.minIndicators &&
+      synthetic.score >= s.minScore;
+
+    if (deepfake) {
+      return {
+        label: "LIKELY_DEEPFAKE",
+        evidenceStrength: Math.round(clamp(0.6 * synthetic.score + 0.4 * inputQuality, 40, 100)),
+        reasons: [
+          `Recording quality was high (${inputQuality.toFixed(0)}/100), so analysis was reliable.`,
+          `Synthetic-indicator strength ${synthetic.score.toFixed(0)}/100 across ${indicators.length} independent measures.`,
+          ...indicators,
+        ],
+        explanation:
+          "Multiple temporal and synthetic-media indicators were detected. This is a probabilistic assessment, not proof of manipulation.",
+      };
+    }
+
+    // --- Stage 3: biological evidence (measured, graded, not all-or-nothing). ---
     // Moderate biological evidence is enough — it does not need to be perfect.
     if (measurable && tl.score >= 30 && (evidence >= 38 || f.supportingWindows >= t.supportingWindows)) {
       reasons.push(`Pulse-related component at ${f.bpm!.toFixed(0)} BPM.`);
@@ -192,20 +243,6 @@ export class BiologicalEvidenceEngine implements LivenessEngine {
       };
     }
 
-    // --- Stage 3: synthetic evidence, only under a high-quality recording. ---
-    if (inputQuality >= 70 && f.signalQuality >= 40 && evidence < 40 && indicators.length >= 3) {
-      return {
-        label: "LIKELY_SYNTHETIC",
-        evidenceStrength: Math.round(clamp(0.5 * (100 - evidence) + 0.5 * inputQuality, 40, 100)),
-        reasons: [
-          `Recording quality was high (${inputQuality.toFixed(0)}/100), so analysis was reliable.`,
-          ...indicators,
-        ],
-        explanation:
-          "Multiple indicators were observed that are inconsistent with a typical live camera capture.",
-      };
-    }
-
     // --- Stage 4: analysable recording, but evidence inconclusive either way. ---
     if (!plausible) {
       reasons.push("No physiologically plausible pulse rate could be isolated.");
@@ -226,7 +263,7 @@ export class BiologicalEvidenceEngine implements LivenessEngine {
       evidenceStrength: Math.round(evidence),
       reasons,
       explanation:
-        "The recording did not provide enough reliable evidence for a confident assessment. This does not indicate a synthetic feed.",
+        "The available evidence was not strong enough to make a reliable classification. This does not indicate synthetic or manipulated media.",
       advice,
     };
   }
