@@ -263,7 +263,7 @@ export class BiologicalEvidenceEngine implements LivenessEngine {
       evidenceStrength: Math.round(evidence),
       reasons,
       explanation:
-        "The recording did not provide enough reliable evidence for a confident assessment. This does not indicate a synthetic feed.",
+        "The available evidence was not strong enough to make a reliable classification. This does not indicate synthetic or manipulated media.",
       advice,
     };
   }
