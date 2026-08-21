@@ -123,7 +123,7 @@ export interface ActiveLiveness {
 
 
 
-export type VerdictLabel = "LIKELY_REAL" | "LIKELY_SYNTHETIC" | "INSUFFICIENT_EVIDENCE";
+export type VerdictLabel = "LIKELY_REAL" | "LIKELY_DEEPFAKE" | "INSUFFICIENT_EVIDENCE";
 
 export interface Verdict {
   label: VerdictLabel;
